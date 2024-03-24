@@ -1,1 +1,727 @@
 //Code By Prakhar
+Part(a)
+
+chart = {
+
+  // Specify the map’s dimensions and projection.
+  const width = 928;
+  const height = 581;
+  const projection = d3.geoAlbersUsa().scale(4/3 * width).translate([width / 2, height / 2]);  //The scale of a projection determines how much the map is zoomed in or out
+
+
+  // Create the container SVG.
+  const svg = d3.create("svg")
+      .attr("viewBox", [0, 0, width, height])
+      .attr("width", width)
+      .attr("height", height)
+      .attr("style", "max-width: 100%; height: auto;"); 
+  // By setting max-width to 100%, the SVG will scale down on smaller screens to fit the width of its container without exceeding its original size. Setting height to auto maintains the aspect ratio as the SVG scales. This ensures that the map visualization is accessible and looks good on devices with different screen sizes, from desktop monitors to mobile phones.
+
+  
+ // Append the state mesh.
+  svg.append("path")
+      .datum(stateMesh)
+      .attr("fill", "none")
+      .attr("stroke", "#777")
+      .attr("stroke-width", 0.5)
+      .attr("stroke-linejoin", "round")
+      .attr("d", d3.geoPath(projection));
+
+  // Create the Circles
+  //Scale and size of bubbles
+  const radiusScale = d3.scaleSqrt()
+    .domain(d3.extent(walmarts, d => d.age))// Min to Max Age
+    .range([2, 10]); // Smallest to Largest Bubble size
+
+svg.selectAll('circle')
+    .data(walmarts)
+    .enter()
+    .append('circle')
+    .attr('cx', d => projection([d.longitude, d.latitude])[0])
+    .attr('cy', d => projection([d.longitude, d.latitude])[1])
+    .attr('r', d => radiusScale(d.age))
+    .attr('fill', '#e63946')
+    .attr('stroke','#f1faee')
+    .attr('opacity', 0.65);
+svg.style('background-color', '#1d3557'); // Light Grey
+
+  
+  return svg.node();
+}
+
+walmarts = {
+  const parseDate = d3.utcParse("%m/%d/%Y");
+  return FileAttachment("walmart.tsv").tsv()
+    .then(data => data.map((d) => ({
+      longitude: +d[0],
+      latitude: +d[1],
+      date: parseDate(d.date),
+      age: (Date.now() - parseDate(d.date))/(1000 * 24 * 60 * 60 )// age in Days
+    })));
+}
+
+stateMesh = FileAttachment("us-counties-10m.json").json().then(us => topojson.mesh(us, us.objects.states))
+
+d3 = require("d3@7", "d3-hexbin@0.2")
+
+import {legend} from "@d3/color-legend"
+
+Plot.plot({
+  projection: "albers-usa",
+  color: {scheme: "Spectral"},
+  marks: [
+    Plot.geo(stateMesh, {strokeOpacity: 0.25}),
+    Plot.dot(walmarts, Plot.hexbin(
+      {fill: "median", r: "count"},
+      {x: "longitude", y: "latitude", binWidth: 14, fill: "date", stroke: "currentColor", strokeWidth: 0.5}
+    ))
+  ]
+})
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+PART(B)
+chart = {
+   const dia = 14;
+   
+
+    // Specify the map’s dimensions and projection.
+    const width = 928;
+    const height = 518;
+    const projection = d3.geoAlbersUsa().scale(1.2 * width).translate([width / 2, height / 2]);
+    const arr = [];
+    walmarts.forEach(loc => {
+        const x = projection([loc.longitude, loc.latitude])[0];
+        const y = projection([loc.longitude, loc.latitude])[1];
+        
+        // Find existing grouped age within the diameter.
+        const old = arr.find(grp => Math.sqrt((x - grp.x) ** 2 + (y - grp.y) ** 2) < dia);
+        
+        if (old) {
+            old.count++;
+            old.totalAge += new Date().getFullYear() - new Date(loc.date).getFullYear();
+        } else {
+            arr.push({
+                x,
+                y,
+                count: 1,
+                totalAge: new Date().getFullYear() - new Date(loc.date).getFullYear()
+            });
+        }
+    });
+
+    arr.forEach(grp => {
+    grp.avg = grp.totalAge / grp.count;
+});
+    
+    // Create the container SVG.
+    const svg = d3.create("svg")
+        .attr("viewBox", [0, 0, width, height])
+        .attr("width", width)
+        .attr("height", height)
+        .attr("style", "max-width: 100%; height: auto;");
+   const bubbles = svg.append("g")
+        .attr("class", "bubbles");
+
+    // Append the state mesh.
+    svg.append("path")
+        .datum(stateMesh)
+        .attr("fill", "none")
+        .attr("stroke", "black")
+        .attr("stroke-width", 0.8)
+        .attr("stroke-linejoin", "round")
+        .attr("d", d3.geoPath(projection));
+
+    
+
+// Create a scale for the circle sizes based on the average age
+const radiusScale = d3.scaleLinear()
+    .domain([0, d3.max(arr, d => d.avg)])
+    .range([0, 12]);
+    
+const colorScale = d3.scaleSequential()
+        .interpolator(d3.interpolateMagma) // Change the color palette here
+        .domain([d3.max(arr, d => d.avg),0]); 
+
+    // Append the bubbles.
+    bubbles.selectAll("circle")
+        .data(arr)
+        .join("circle")
+            .attr("cx", d => d.x)
+            .attr("cy", d => d.y)
+            .attr("r", d => radiusScale(d.avg)) // Proportional to age
+            .attr("fill", d => colorScale(d.avg))
+            .attr("opacity", 0.7)
+            .attr("stroke","white")
+        .append("title")
+            .text(d => `Location: ${d.latitude}, ${d.longitude}\nEstablished: ${d.date}`);
+  svg.style('background-color', '#818589'); // Dark Grey
+
+
+    // Create a legend for the color scale.
+    const legend = svg.append("g")
+        .attr("class", "legend")
+        .attr("transform", "translate(580, 20)");
+
+    const legendWidth = 200;
+    const legendHeight = 10;
+
+    const defs = legend.append("defs");
+
+    const linearGradient = defs.append("linearGradient")
+        .attr("id", "color-gradient")
+        .attr("x1", "0%")
+        .attr("x2", "100%");
+
+    linearGradient.selectAll("stop")
+        .data(colorScale.ticks().map((tick, i, nodes) => ({
+            offset: `${100 * i / (nodes.length - 1)}%`,
+            color: colorScale(tick),
+            value: tick.toFixed(0) // Adjust decimal places as needed
+        })))
+        .join("stop")
+            .attr("offset", d => d.offset)
+            .attr("stop-color", d => d.color);
+
+    legend.append("rect")
+        .attr("width", legendWidth)
+        .attr("height", legendHeight)
+        .style("fill", "url(#color-gradient)");
+
+    legend.append("text")
+        .attr("x", legendWidth / 2)
+        .attr("y", legendHeight - 10)
+        .attr("text-anchor", "middle")
+        .attr('color', 'white' )
+        .text("Old_________________New");
+
+  
+    function calculateBubbleRadius(date) {
+        const curr = new Date();
+        const esDate = new Date(date);
+        const ageInYears = (curr - esDate) / (1000 * 60 * 60 * 24 * 365); // Age in years
+        // Adjust the scaling factor as needed to control the size of the bubbles
+        const scaleFactor = 1; // Adjust as needed
+        return Math.sqrt(ageInYears) * scaleFactor; // Square root scaling for better visual representation
+    }
+
+    return svg.node();
+}
+
+walmarts = {
+  const parseDate = d3.utcParse("%m/%d/%Y");
+  return FileAttachment("walmart.tsv").tsv()
+    .then(data => data.map((d) => ({
+      longitude: +d[0],
+      latitude: +d[1],
+      date: parseDate(d.date),
+      age: (Date.now() - parseDate(d.date))/(1000 * 24 * 60 * 60 )// age in Days
+    })));
+}
+
+stateMesh = FileAttachment("us-counties-10m.json").json().then(us => topojson.mesh(us, us.objects.states))
+
+d3 = require("d3@7", "d3-hexbin@0.2")
+
+import {legend} from "@d3/color-legend"
+
+
+
+
+
+
+
+
+
+
+
+
+PART(c)
+
+chart = {
+
+      const diameter = 14;
+
+    // Specify the map’s dimensions and projection.
+    const width = 928;
+    const height = 518;
+    const projection = d3.geoAlbersUsa().scale(1.20 * width).translate([width / 2, height / 2]);
+
+  
+    const arr = [];
+    walmarts.forEach(loc => {
+        const x = projection([loc.longitude, loc.latitude])[0];
+        const y = projection([loc.longitude, loc.latitude])[1];
+        
+        // Find existing aggregated age within the diameter.
+        const old = arr.find(grp => Math.sqrt((x - grp.x) ** 2 + (y - grp.y) ** 2) < diameter);
+        
+        if (old) {
+            old.count++;
+            old.totalAge += new Date().getFullYear() - new Date(loc.date).getFullYear();
+        } else {
+            arr.push({
+                x,
+                y,
+                count: 1,
+                totalAge: new Date().getFullYear() - new Date(loc.date).getFullYear()
+            });
+        }
+    });
+
+    arr.forEach(grp => {
+    grp.avg = grp.totalAge / grp.count;
+});
+
+    // Create a color scale for age.
+    
+    // Create the container SVG.
+    const svg = d3.create("svg")
+        .attr("viewBox", [0, 0, width, height])
+        .attr("width", width)
+        .attr("height", height)
+        .attr("style", "max-width: 100%; height: auto;");
+  
+const bubbles = svg.append("g")
+        .attr("class", "bubbles");
+
+  
+    // Append the state mesh.
+    svg.append("path")
+        .datum(stateMesh)
+        .attr("fill", "none")
+        .attr("stroke", "black")
+        .attr("stroke-width", 0.65)
+        .attr("stroke-linejoin", "round")
+        .attr("d", d3.geoPath(projection));
+
+// Create a scale for the circle sizes based on the average age
+const radiusScale = d3.scaleLinear()
+    .domain([0, d3.max(arr, d => d.totalAge)])
+    .range([1, 26]);
+    
+const colorScale = d3.scaleSequential()
+        .interpolator(d3.interpolateMagma) // Change the color palette here
+        .domain([d3.max(arr, d => d.totalAge), 0]); // Reverse the domain
+
+    // Append the bubbles.
+    bubbles.selectAll("circle")
+        .data(arr)
+        .join("circle")
+            .attr("cx", d => d.x)
+            .attr("cy", d => d.y)
+            .attr("r", d => radiusScale(d.totalAge)) // Proportional to age
+            .attr("fill", d => colorScale(d.totalAge))
+            .attr("opacity", 0.7)
+            // .attr("stroke","black")
+        .append("title")
+            .text(d => `Location: ${d.latitude}, ${d.longitude}\nEstablished: ${d.date}`);
+    svg.style('background-color', '#818589'); // Dark Grey
+
+
+    // Create a legend for the color scale.
+    const legend = svg.append("g")
+        .attr("class", "legend")
+        .attr("transform", "translate(580, 20)");
+
+    const legendWidth = 200;
+    const legendHeight = 10;
+
+    const defs = legend.append("defs");
+
+    const linearGradient = defs.append("linearGradient")
+        .attr("id", "color-gradient")
+        .attr("x1", "0%")
+        .attr("x2", "100%");
+
+    linearGradient.selectAll("stop")
+        .data(colorScale.ticks().map((tick, i, nodes) => ({
+            offset: `${100 * i / (nodes.length - 1)}%`,
+            color: colorScale(tick),
+            value: tick.toFixed(0) // Adjust decimal places as needed
+        })))
+        .join("stop")
+            .attr("offset", d => d.offset)
+            .attr("stop-color", d => d.color);
+
+    legend.append("rect")
+        .attr("width", legendWidth)
+        .attr("height", legendHeight)
+        .style("fill", "url(#color-gradient)");
+
+    legend.append("text")
+        .attr("x", legendWidth / 2)
+        .attr("y", legendHeight - 10)
+        .attr("text-anchor", "middle")
+        .text("Old_________________New");
+
+    function calculateBubbleRadius(date) {
+        const currentDate = new Date();
+        const establishmentDate = new Date(date);
+        const ageInYears = (currentDate - establishmentDate) / (1000 * 60 * 60 * 24 * 365); // Age in years
+        // Adjust the scaling factor as needed to control the size of the bubbles
+        const scaleFactor = 1; // Adjust as needed
+        return Math.sqrt(ageInYears) * scaleFactor; // Square root scaling for better visual representation
+    }
+
+    return svg.node();
+}
+
+
+
+walmarts = 
+{
+  const parseDate = d3.utcParse("%m/%d/%Y");
+  return FileAttachment("walmart.tsv").tsv()
+    .then(data => data.map((d) => ({
+      longitude: +d[0],
+      latitude: +d[1],
+      date: parseDate(d.date)
+    })));
+}
+
+
+stateMesh = FileAttachment("us-counties-10m.json").json().then(us => topojson.mesh(us, us.objects.states))
+
+d3 = require("d3@7", "d3-hexbin@0.2")
+
+import {legend} from "@d3/color-legend"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+PART(d)
+chart = {
+  // Set map dimensions and projection configuration.
+  const width = 928;
+  const height = 518;
+  const projection = d3.geoAlbersUsa().scale(1.20 * width).translate([width / 2, height / 2]);
+
+  // Initialize the SVG container for the map.
+  const svg = d3.create("svg")
+      .attr("viewBox", [0, 0, width, height])
+      .attr("width", width)
+      .attr("height", height)
+      .attr("style", "max-width: 100%; height: auto;")
+      .style('background-color', '#818589'); // Set the background color to dark grey.
+
+  // Process and project COVID data points onto the map.
+  const covid_data = [];
+  for (let i = 0; i < final_data.length; i++) {
+    const row = final_data[i];
+    const projectionResult = projection([row.long, row.lat]);
+    if (projectionResult === null) continue; // Skip if projection result is null.
+    
+    const x = projectionResult[0];
+    const y = projectionResult[1];
+    const cases = parseInt(row.cases);
+    const deaths = parseInt(row.deaths);
+    const fips = row.fips;
+    
+    // Check for existing data point and update or push new entry.
+    const existingData = covid_data.find(d => d.fips === row.fips);
+    if(existingData) {
+      existingData.cases = cases;
+      existingData.deaths = deaths;
+    } else {
+      covid_data.push({ x, y, fips, cases, deaths });      
+    }
+  }
+  
+  // Calculate the national average of cases.
+  let national_average = 0;
+  covid_data.forEach(row => {
+    national_average += row.cases;
+  });
+  national_average /= covid_data.length;
+
+  // Define color and radius based on case count relative to the national average.
+  function colors(cases, national_average) {
+    return cases >= national_average ? "red" : "green";
+  }
+
+  function radius(cases, national_average) {
+    return colors(cases, national_average) == "red" ? Math.SQRT2 * 8 : 6;
+  }
+
+  // Append groups for bubbles and state borders to the SVG.
+  const bubbles = svg.append("g").attr("class", "bubbles");
+  svg.append("path")
+    .datum(stateMesh)
+    .attr("fill", "none")
+    .attr("stroke", "black")
+    .attr("stroke-width", 0.5)
+    .attr("stroke-linejoin", "round")
+    .attr("d", d3.geoPath(projection));
+
+  // Create and style bubbles for each data point.
+  bubbles.selectAll("circle")
+    .data(covid_data)
+    .join("circle")
+      .attr("cx", d => d.x)
+      .attr("cy", d => d.y)
+      .attr("r", d => radius(d.cases, national_average))
+      .attr("fill", d => colors(d.cases, national_average))
+      .attr("stroke", "white")
+      .attr("opacity", 0.7);
+
+  return svg.node();
+}
+
+
+
+corona_data = {
+
+  const parseDate = d3.utcParse("%Y-%m-%d");
+  return  d3.csv("https://raw.githubusercontent.com/nytimes/covid-19-data/master/us-counties.csv")
+    .then(data => data.map((d) => ({
+      fips: d.fips,
+      deaths: d.deaths,
+      cases: d.cases,
+      date: parseDate(d.date)
+    })));
+}
+
+
+filter_data = {
+  const startDate = new Date("2021-02-01");
+  const endDate = new Date("2021-03-01");
+  const filteredData = corona_data.filter(d => d.date >= startDate && d.date <= endDate && d.fips);
+  return filteredData;
+}
+
+
+county_coordinates = {
+      return d3.csv("https://gist.githubusercontent.com/russellsamora/12be4f9f574e92413ea3f92ce1bc58e6/raw/3f18230058afd7431a5d394dab7eeb0aafd29d81/us_county_latlng.csv").then(data => data.map((d) => ({
+        fips: d.fips_code,
+        lat: d.lat,
+        long: d.lng
+      })));
+}
+
+
+filter_data.forEach(data => {
+    data.lat = county_coordinates.find(row => row.fips === data.fips) ?county_coordinates.find(row => row.fips===data.fips).lat:0;
+  data.long = county_coordinates.find(row => row.fips === data.fips) ?county_coordinates.find(row => row.fips===data.fips).long:0;
+});
+
+
+final_data = {
+  return filter_data.filter(d => d.lat!=0 && d.long!=0);
+}
+
+
+final_data.forEach(data => {
+    data.lat = parseFloat(data.lat);
+    data.long = parseFloat(data.long);
+});
+
+
+stateMesh = FileAttachment("us-counties-10m.json").json().then(us => topojson.mesh(us, us.objects.states))
+
+d3 = require("d3@7", "d3-hexbin@0.2")
+
+import {legend} from "@d3/color-legend"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+PART(e)
+
+chart = {
+
+  // Specify the map’s dimensions and projection.
+  const width = 928;
+  const height = 518;
+  const projection = d3.geoAlbersUsa().scale(1.20 * width).translate([width / 2, height / 2]);
+
+  // Create the container SVG.
+  const svg = d3.create("svg")
+      .attr("viewBox", [0, 0, width, height])
+      .attr("width", width)
+      .attr("height", height)
+      .attr("style", "max-width: 100%; height: auto;");
+
+  // final covid-data.
+  const covid_data = [];
+  for (let i = 0; i < final_data.length; i++) {
+    const row = final_data[i];
+    const projectionResult = projection([row.long, row.lat]);
+    if (projectionResult === null) {
+        continue;
+    } 
+    const x = projectionResult[0]; // Access x-coordinate
+      const y = projectionResult[1]; // Access y-coordinate
+    const cases = parseInt(row.cases);
+    const deaths = parseInt(row.deaths);
+    const fips = row.fips;
+    const existingData = covid_data.find(d => d.fips === row.fips);
+
+    if(existingData){
+        existingData.cases = parseInt(row.cases);
+        existingData.deaths = parseInt(row.deaths);
+    }else{
+      covid_data.push({
+        x,
+        y,
+        fips: fips,
+        cases: cases,
+        deaths: deaths
+      });      
+    }
+  }
+  
+  let national_average = 0;
+  let c =0;
+  covid_data.forEach(row =>{
+    national_average += row.cases;
+    c++;
+  })
+  
+  national_average /= c;
+  
+  console.log(national_average);
+  // Create the color and radius
+  covid_data.forEach(d => {
+        d.deathRatio = d.deaths / d.cases;
+    })
+
+    // Create the color and radius
+    function colors(deathRatio) {
+        return deathRatio >= 0.03 ? "red" : "	#32CD32"; // Adjust threshold and color as needed
+    }
+
+    const radiusScale = d3.scaleLinear()
+        .domain([0, d3.max(covid_data, d => d.deathRatio)])
+        .range([1, 25]);
+  console.log(covid_data);
+  
+  const bubbles = svg.append("g")
+    .attr("class","bubbles");
+
+  covid_data.sort((a, b) => {
+    // Sort by death ratio ascending
+    return a.deathRatio - b.deathRatio;
+  });
+
+  // Append the state mesh.
+  svg.append("path")
+      .datum(stateMesh)
+      .attr("fill", "none")
+      .attr("stroke", "black")
+      .attr("stroke-width", 0.65)
+      .attr("stroke-linejoin", "round")
+      .attr("d", d3.geoPath(projection));
+
+ bubbles.selectAll("circle")
+    .data(covid_data)
+    .join("circle")
+        .attr("cx" , d=> d.x)
+        .attr("cy" , d=> d.y)
+        .attr("r" , d => radiusScale(d.deathRatio))
+        .attr("fill" ,d => colors(d.deathRatio))
+         .attr("stroke", "white")
+
+        .attr("opacity", 0.7);
+      svg.style('background-color', '#818589'); // Dark Grey
+
+  
+  return svg.node();
+}
+
+
+
+
+corona_data = {
+
+  const parseDate = d3.utcParse("%Y-%m-%d");
+  return  d3.csv("https://raw.githubusercontent.com/nytimes/covid-19-data/master/us-counties.csv")
+    .then(data => data.map((d) => ({
+      fips: d.fips,
+      deaths: d.deaths,
+      cases: d.cases,
+      date: parseDate(d.date)
+    })));
+}
+
+
+
+
+filter_data = {
+  const startDate = new Date("2021-02-01");
+  const endDate = new Date("2021-03-01");
+  const filteredData = corona_data.filter(d => d.date >= startDate && d.date <= endDate && d.fips);
+  return filteredData;
+}
+
+
+
+county_coordinates = {
+      return d3.csv("https://gist.githubusercontent.com/russellsamora/12be4f9f574e92413ea3f92ce1bc58e6/raw/3f18230058afd7431a5d394dab7eeb0aafd29d81/us_county_latlng.csv").then(data => data.map((d) => ({
+        fips: d.fips_code,
+        lat: d.lat,
+        long: d.lng
+      })));
+}
+
+
+
+filter_data.forEach(data => {
+    data.lat = county_coordinates.find(row => row.fips === data.fips) ?county_coordinates.find(row => row.fips===data.fips).lat:0;
+  data.long = county_coordinates.find(row => row.fips === data.fips) ?county_coordinates.find(row => row.fips===data.fips).long:0;
+});
+
+
+
+
+final_data = {
+  return filter_data.filter(d => d.lat!=0 && d.long!=0);
+}
+
+
+final_data.forEach(data => {
+    data.lat = parseFloat(data.lat);
+    data.long = parseFloat(data.long);
+});
+
+stateMesh = FileAttachment("us-counties-10m.json").json().then(us => topojson.mesh(us, us.objects.states))
+
+d3 = require("d3@7", "d3-hexbin@0.2")
+
+import {legend} from "@d3/color-legend"
